@@ -1,0 +1,9 @@
+__pycache__/
+.ipynb_checkpoints/
+*.tar
+preprocessing/
+*.ipynb
+*.txt
+*.pkl
+*.hdf5
+*.csv
