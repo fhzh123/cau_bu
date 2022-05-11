@@ -3,7 +3,7 @@ import time
 import argparse
 # Import custom modules
 # from task.preprocessing import preprocessing
-from task.train import training
+# from task.train import training
 # from task.test import testing
 # Utils
 from utils import str2bool, path_check
@@ -15,11 +15,11 @@ def main(args):
     # Path setting
     path_check(args)
 
-    # if args.preprocessing:
-    #     preprocessing(args)
+    if args.preprocessing:
+        preprocessing(args)
 
-    if args.training:
-        training(args)
+    # if args.training:
+    #     training(args)
 
     # if args.testing:
     #     testing(args)
