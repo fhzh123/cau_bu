@@ -18,6 +18,7 @@ from model.dataset import CustomDataset
 # from model.plm.bart import Bart
 from model.loss import label_smoothing_loss
 from optimizer.utils import shceduler_select, optimizer_select
+from transformers import BertForSequenceClassification
 from utils import TqdmLoggingHandler, write_log
 
 def training(args):
@@ -69,10 +70,14 @@ def training(args):
 
     # 2) Dataloader setting
     dataset_dict = {
-        'train': CustomDataset(src_list=train_src_input_ids, trg_list=train_trg_input_ids, 
-                               min_len=args.min_len, src_max_len=args.src_max_len, trg_max_len=args.trg_max_len),
-        'valid': CustomDataset(src_list=valid_src_input_ids, trg_list=valid_trg_input_ids,
-                               min_len=args.min_len, src_max_len=args.src_max_len, trg_max_len=args.trg_max_len),
+        'train': CustomDataset(tokenizer=args.tokenizer, input_ids_list=train_src_input_ids['input_ids'], 
+                               label_list=train_trg_labels, attention_mask_list=train_src_input_ids['attention_mask'], 
+                               token_type_ids_list=train_src_input_ids['token_type_ids'], 
+                               min_len=args.min_len, max_len=args.max_len),
+        'valid': CustomDataset(tokenizer=args.tokenizer, input_ids_list=valid_src_input_ids['input_ids'], 
+                               label_list=valid_trg_labels, attention_mask_list=valid_src_input_ids['attention_mask'], 
+                               token_type_ids_list=valid_src_input_ids['token_type_ids'], 
+                               min_len=args.min_len, max_len=args.max_len),
     }
     dataloader_dict = {
         'train': DataLoader(dataset_dict['train'], drop_last=True,
@@ -142,13 +147,15 @@ def training(args):
                 val_loss = 0
                 val_acc = 0
                 model.eval()
-            for i, (src_sequence, trg_label) in enumerate(tqdm(dataloader_dict[phase], bar_format='{l_bar}{bar:30}{r_bar}{bar:-2b}')):
+            for i, (src_sequence, src_segment, src_att, trg_label) in enumerate(tqdm(dataloader_dict[phase], bar_format='{l_bar}{bar:30}{r_bar}{bar:-2b}')):
 
                 # Optimizer setting
                 optimizer.zero_grad(set_to_none=True)
 
                 # Input, output setting
                 src_sequence = src_sequence.to(device, non_blocking=True)
+                src_segment = src_segment.to(device, non_blocking=True)
+                src_att = src_att.to(device, non_blocking=True)
                 trg_label = trg_label.to(device, non_blocking=True)
 
                 # Train
