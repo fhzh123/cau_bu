@@ -2,8 +2,8 @@
 import time
 import argparse
 # Import custom modules
-# from task.preprocessing import preprocessing
-# from task.train import training
+from task.classification.preprocessing import preprocessing
+from task.classification.train import training
 # from task.test import testing
 # Utils
 from utils import str2bool, path_check
@@ -18,8 +18,8 @@ def main(args):
     if args.preprocessing:
         preprocessing(args)
 
-    # if args.training:
-    #     training(args)
+    if args.training:
+        training(args)
 
     # if args.testing:
     #     testing(args)
@@ -30,6 +30,8 @@ def main(args):
 if __name__=='__main__':
     parser = argparse.ArgumentParser(description='Parsing Method')
     # Task setting
+    parser.add_argument('--task', default='translation', choices=['classification', 'summarization'],
+                        help='')
     parser.add_argument('--preprocessing', action='store_true')
     parser.add_argument('--training', action='store_true')
     parser.add_argument('--testing', action='store_true')
@@ -39,22 +41,22 @@ if __name__=='__main__':
                         help='Pre-processed data save path')
     parser.add_argument('--data_path', default='/HDD/dataset', type=str,
                         help='Original data path')
-    parser.add_argument('--data_name', default='WMT2016_Multimodal', type=str,
-                        help='Data name; Default is WMT2016_Multimodal')
-    parser.add_argument('--save_path', default='/HDD/kyohoon/model_checkpoint/latent', type=str,
+    parser.add_argument('--data_name', default='GVFC', type=str,
+                        help='Data name; Default is GVFC')
+    parser.add_argument('--model_save_path', default='/HDD/kyohoon/model_checkpoint/latent', type=str,
                         help='Model checkpoint file path')
     parser.add_argument('--result_path', default='./results', type=str,
                         help='Results file path')               
     # Preprocessing setting
-    parser.add_argument('--tokenizer', default='spm', choices=[
+    parser.add_argument('--tokenizer', default='bert', choices=[
         'spm', 'bert', 'bart', 'T5'
-            ], help='Tokenizer select; Default is spm')
+            ], help='Tokenizer select; Default is bert')
     parser.add_argument('--sentencepiece_model', default='unigram', choices=['unigram', 'bpe', 'word', 'char'],
                         help="Google's SentencePiece model type; Default is unigram")
-    parser.add_argument('--src_vocab_size', default=8000, type=int,
-                        help='Source text vocabulary size; Default is 8000')
-    parser.add_argument('--trg_vocab_size', default=8000, type=int,
-                        help='Source text vocabulary size; Default is 8000')
+    parser.add_argument('--src_vocab_size', default=3600, type=int,
+                        help='Source text vocabulary size; Default is 3600')
+    parser.add_argument('--trg_vocab_size', default=3600, type=int,
+                        help='Source text vocabulary size; Default is 3600')
     parser.add_argument('--pad_id', default=0, type=int,
                         help='Padding token index; Default is 0')
     parser.add_argument('--unk_id', default=3, type=int,
@@ -65,9 +67,9 @@ if __name__=='__main__':
                         help='Padding token index; Default is 2')
     # Model setting
     # 0) Model selection
-    parser.add_argument('--model_type', default='custom_transformer', type=str, choices=[
-        'custom_transformer', 'bart', 'T5'
-            ], help='Model type selection; Default is custom_transformer')
+    parser.add_argument('--model_type', default='bert', type=str, choices=[
+        'custom_transformer', 'bart', 'T5', 'bert'
+            ], help='Model type selection; Default is bert')
     parser.add_argument('--isPreTrain', default=False, type=str2bool,
                         help='Using pre-trained model; Default is False')
     # 1) Custom Transformer
@@ -75,8 +77,8 @@ if __name__=='__main__':
                         help='Transformer model dimension; Default is 768')
     parser.add_argument('--d_embedding', default=256, type=int, 
                         help='Transformer embedding word token dimension; Default is 256')
-    parser.add_argument('--n_head', default=16, type=int, 
-                        help="Multihead Attention's head count; Default is 16")
+    parser.add_argument('--n_head', default=12, type=int, 
+                        help="Multihead Attention's head count; Default is 12")
     parser.add_argument('--dim_feedforward', default=2048, type=int, 
                         help="Feedforward network's dimension; Default is 2048")
     parser.add_argument('--dropout', default=0.3, type=float, 
@@ -89,14 +91,14 @@ if __name__=='__main__':
                         help="Number of decoder layers; Default is 8")
     parser.add_argument('--trg_emb_prj_weight_sharing', default=False, type=str2bool,
                         help='Weight sharing between decoder embedding and decoder linear; Default is False')
-    parser.add_argument('--emb_src_trg_weight_sharing', default=True, type=str2bool,
-                        help='Weight sharing between encoder embedding and decoder embedding; Default is True')
+    parser.add_argument('--emb_src_trg_weight_sharing', default=False, type=str2bool,
+                        help='Weight sharing between encoder embedding and decoder embedding; Default is False')
     parser.add_argument('--parallel', default=False, type=str2bool,
                         help='Transformer Encoder and Decoder parallel mode; Default is False')
     parser.add_argument('--num_common_layer', default=6, type=int, 
                         help="Number of common layers; Default is 6")
     # 2) Variational model
-    parser.add_argument('--variational', default=False, type=str2bool,
+    parser.add_argument('--variational_mode', default=0, type=int,
                         help='Variational transformer mode; Default is False')
     parser.add_argument('--d_latent', default=128, type=int, 
                         help='Latent variable dimension; Default is 128')
@@ -114,12 +116,14 @@ if __name__=='__main__':
     # Training setting
     parser.add_argument('--min_len', default=4, type=int, 
                         help="Sentences's minimum length; Default is 4")
+    parser.add_argument('--max_len', default=300, type=int, 
+                        help="Classification source sentences's maximum length; Default is 300")
     parser.add_argument('--src_max_len', default=300, type=int, 
                         help="Source sentences's maximum length; Default is 300")
     parser.add_argument('--trg_max_len', default=300, type=int, 
                         help="Target sentences's maximum length; Default is 300")
-    parser.add_argument('--num_epochs', default=10, type=int, 
-                        help='Training epochs; Default is 10')
+    parser.add_argument('--num_epochs', default=100, type=int, 
+                        help='Training epochs; Default is 100')
     parser.add_argument('--num_workers', default=8, type=int, 
                         help='Num CPU Workers; Default is 8')
     parser.add_argument('--batch_size', default=16, type=int,    

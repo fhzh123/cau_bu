@@ -18,12 +18,27 @@ def str2bool(v):
         raise argparse.ArgumentTypeError('Boolean value expected.')
 
 def path_check(args):
+    # Preprocessing Path Checking
     if not os.path.exists(args.preprocess_path):
         os.mkdir(args.preprocess_path)
 
-    if not os.path.exists(args.save_path):
-        os.mkdir(args.save_path)
+    if not os.path.exists(os.path.join(args.preprocess_path, args.task)):
+        os.mkdir(os.path.join(args.preprocess_path, args.task))
 
+    if not os.path.exists(os.path.join(args.preprocess_path, args.task, args.data_name)):
+        os.mkdir(os.path.join(args.preprocess_path, args.task, args.data_name))
+
+    # Model Checkpoint Path Checking
+    if not os.path.exists(args.model_save_path):
+        os.mkdir(args.model_save_path)
+
+    if not os.path.exists(os.path.join(args.model_save_path, args.task)):
+        os.mkdir(os.path.join(args.model_save_path, args.task))
+
+    if not os.path.exists(os.path.join(args.model_save_path, args.task, args.data_name)):
+        os.mkdir(os.path.join(args.model_save_path, args.task, args.data_name))
+
+    # Testing Results Path Checking
     if not os.path.exists(args.result_path):
         os.mkdir(args.result_path)
 
