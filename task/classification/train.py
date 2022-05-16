@@ -8,12 +8,13 @@ from tqdm import tqdm
 from time import time
 # Import PyTorch
 import torch
+import torch.nn as nn
 from torch.nn import functional as F
 from torch.utils.data import DataLoader
 from torch.nn.utils import clip_grad_norm_
 from torch.cuda.amp import GradScaler, autocast
 # Import custom modules
-from model.dataset import CustomDataset
+from model.dataset import CustomDataset, PadCollate
 # from model.custom_transformer.transformer import Transformer
 # from model.plm.bart import Bart
 from model.loss import label_smoothing_loss
@@ -82,10 +83,10 @@ def training(args):
     dataloader_dict = {
         'train': DataLoader(dataset_dict['train'], drop_last=True,
                             batch_size=args.batch_size, shuffle=True, pin_memory=True,
-                            num_workers=args.num_workers),
+                            num_workers=args.num_workers, collate_fn=PadCollate(args.tokenizer)),
         'valid': DataLoader(dataset_dict['valid'], drop_last=False,
                             batch_size=args.batch_size, shuffle=False, pin_memory=True,
-                            num_workers=args.num_workers)
+                            num_workers=args.num_workers, collate_fn=PadCollate(args.tokenizer))
     }
     write_log(logger, f"Total number of trainingsets  iterations - {len(dataset_dict['train'])}, {len(dataloader_dict['train'])}")
 
@@ -116,6 +117,7 @@ def training(args):
     optimizer = optimizer_select(model, args)
     scheduler = shceduler_select(optimizer, dataloader_dict, args)
     scaler = GradScaler()
+    criterion = nn.CrossEntropyLoss()
 
     # 3) Model resume
     start_epoch = 0
@@ -162,12 +164,11 @@ def training(args):
                 if phase == 'train':
 
                     with autocast():
-                        predicted = model(src_sequence)
-                        predicted = predicted.view(-1, predicted.size(-1))
-                        nmt_loss = label_smoothing_loss(predicted, trg_sequence_gold, trg_pad_idx=args.pad_id)
-                        total_loss = nmt_loss + kl
+                        predicted = model(input_ids=src_sequence, token_type_ids=src_segment, attention_mask=src_att)
+                        out = predicted.logits
+                        loss = criterion(out, trg_label)
 
-                    scaler.scale(total_loss).backward()
+                    scaler.scale(loss).backward()
                     if args.clip_grad_norm > 0:
                         scaler.unscale_(optimizer)
                         clip_grad_norm_(model.parameters(), args.clip_grad_norm)
@@ -181,10 +182,10 @@ def training(args):
 
                     # Print loss value only training
                     if i == 0 or freq == args.print_freq or i==len(dataloader_dict['train']):
-                        acc = (predicted.max(dim=1)[1] == trg_sequence_gold).sum() / len(trg_sequence_gold)
+                        acc = (out.max(dim=1)[1] == trg_label).sum() / len(trg_label)
                         iter_log = "[Epoch:%03d][%03d/%03d] train_loss:%03.3f | train_acc:%03.2f%% | learning_rate:%1.6f | spend_time:%02.2fmin" % \
                             (epoch, i, len(dataloader_dict['train']), 
-                            total_loss.item(), acc*100, optimizer.param_groups[0]['lr'], 
+                            loss.item(), acc*100, optimizer.param_groups[0]['lr'], 
                             (time() - start_time_e) / 60)
                         write_log(logger, iter_log)
                         freq = 0
@@ -193,12 +194,11 @@ def training(args):
                 # Validation
                 if phase == 'valid':
                     with torch.no_grad():
-                        predicted, kl = model(src_sequence, trg_sequence, 
-                                              non_pad_position=non_pad, tgt_subsqeunt_mask=tgt_subsqeunt_mask)
-                        nmt_loss = F.cross_entropy(predicted, trg_sequence_gold)
-                        total_loss = nmt_loss + kl
-                    val_loss += total_loss.item()
-                    val_acc += (predicted.max(dim=1)[1] == trg_sequence_gold).sum() / len(trg_sequence_gold)
+                        predicted = model(input_ids=src_sequence, token_type_ids=src_segment, attention_mask=src_att)
+                        out = predicted.logits
+                        loss = criterion(out, trg_label)
+                    val_loss += loss.item()
+                    val_acc += (out.max(dim=1)[1] == trg_label).sum() / len(trg_label)
 
             if phase == 'valid':
 
@@ -215,7 +215,7 @@ def training(args):
                 if not os.path.exists(save_path):
                     os.mkdir(save_path)
                 save_file_name = os.path.join(save_path, 
-                                              f'checkpoint_src_{args.src_vocab_size}_trg_{args.trg_vocab_size}_v_{args.variational}_p_{args.parallel}.pth.tar')
+                                              f'checkpoint_src_{args.src_vocab_size}_trg_{args.trg_vocab_size}_p_{args.parallel}.pth.tar')
                 if val_acc > best_val_acc:
                     write_log(logger, 'Checkpoint saving...')
                     torch.save({
